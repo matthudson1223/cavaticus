@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.turbo/
+.env
+.env.local
+*.env
+build/
+.next/
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.DS_Store
+.claude/
+*.tsbuildinfo
