@@ -78,3 +78,17 @@ export const userSettings = pgTable('user_settings', {
   editorFontSize: integer('editor_font_size').notNull().default(14),
   settingsJson: jsonb('settings_json').notNull().default('{}'),
 });
+
+export const userModels = pgTable(
+  'user_models',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    modelId: text('model_id').notNull(),
+    label: text('label'),
+    addedAt: timestamp('added_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('user_models_user_model_idx').on(t.userId, t.modelId)],
+);

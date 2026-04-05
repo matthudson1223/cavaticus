@@ -4,16 +4,19 @@ import type { ChatMessage } from '@cavaticus/shared';
 interface ChatState {
   messages: ChatMessage[];
   agentStatus: 'thinking' | 'coding' | 'idle';
+  selectedModelId: string | null;
   setMessages: (msgs: ChatMessage[]) => void;
   addMessage: (msg: ChatMessage) => void;
   appendChunk: (messageId: string, chunk: string) => void;
   replaceMessage: (msg: ChatMessage) => void;
   setAgentStatus: (status: 'thinking' | 'coding' | 'idle') => void;
+  setSelectedModelId: (id: string | null) => void;
 }
 
 export const useChatStore = create<ChatState>((set) => ({
   messages: [],
   agentStatus: 'idle',
+  selectedModelId: null,
   setMessages: (messages) => set({ messages }),
   addMessage: (msg) => set((s) => ({ messages: [...s.messages, msg] })),
   appendChunk: (messageId, chunk) =>
@@ -27,4 +30,5 @@ export const useChatStore = create<ChatState>((set) => ({
       messages: s.messages.map((m) => (m.id === msg.id ? msg : m)),
     })),
   setAgentStatus: (agentStatus) => set({ agentStatus }),
+  setSelectedModelId: (selectedModelId) => set({ selectedModelId }),
 }));

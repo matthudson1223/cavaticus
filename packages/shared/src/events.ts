@@ -15,6 +15,7 @@ export interface ChatSendPayload {
   projectId: string;
   content: string;
   attachments?: import('./types.js').Attachment[];
+  modelId?: string;
 }
 
 export interface ChatChunkPayload {

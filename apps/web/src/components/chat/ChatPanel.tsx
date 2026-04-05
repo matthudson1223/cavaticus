@@ -1,17 +1,27 @@
 import { useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useChatStore } from '../../stores/chatStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { WS_EVENTS } from '@cavaticus/shared';
-import type { ChatMessage } from '@cavaticus/shared';
+import type { ChatMessage, UserModel } from '@cavaticus/shared';
 import { getSocket } from '../../lib/socket';
+import { api } from '../../lib/api';
 
 export function ChatPanel() {
   const messages = useChatStore((s) => s.messages);
   const addMessage = useChatStore((s) => s.addMessage);
   const agentStatus = useChatStore((s) => s.agentStatus);
+  const selectedModelId = useChatStore((s) => s.selectedModelId);
+  const setSelectedModelId = useChatStore((s) => s.setSelectedModelId);
   const project = useProjectStore((s) => s.project);
   const [input, setInput] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const { data: modelsData } = useQuery({
+    queryKey: ['models'],
+    queryFn: () => api.get<{ models: UserModel[] }>('/api/v1/settings/models'),
+  });
+  const models = modelsData?.models || [];
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -45,6 +55,7 @@ export function ChatPanel() {
     getSocket().emit(WS_EVENTS.CHAT_SEND, {
       projectId: project.id,
       content: trimmed,
+      modelId: selectedModelId || undefined,
     });
 
     setInput('');
@@ -70,6 +81,30 @@ export function ChatPanel() {
       </div>
 
       <div className="p-3" style={{ borderTop: '1px solid var(--border)' }}>
+        {models.length > 0 && (
+          <div className="mb-3">
+            <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
+              Model
+            </label>
+            <select
+              value={selectedModelId || ''}
+              onChange={(e) => setSelectedModelId(e.target.value || null)}
+              className="w-full px-2 py-1.5 rounded-lg text-sm"
+              style={{
+                background: 'var(--bg-3)',
+                border: '1px solid var(--border)',
+                color: 'var(--text)',
+              }}
+            >
+              <option value="">Default</option>
+              {models.map((model) => (
+                <option key={model.id} value={model.modelId}>
+                  {model.label || model.modelId}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div className="flex gap-2">
           <textarea
             value={input}

@@ -1,4 +1,12 @@
-export type ApiKeyProvider = 'claude' | 'openai' | 'gemini';
+export type ApiKeyProvider = 'claude' | 'openai' | 'gemini' | 'openrouter';
+
+export interface UserModel {
+  id: string;
+  userId: string;
+  modelId: string;
+  label: string | null;
+  addedAt: string;
+}
 
 export interface User {
   id: string;
@@ -60,6 +68,7 @@ export interface AgentRequest {
   chatHistory: Array<{ role: 'user' | 'assistant'; content: string }>;
   userMessage: string;
   attachments?: Attachment[];
+  openrouterModel?: string;
 }
 
 export interface AgentResponse {

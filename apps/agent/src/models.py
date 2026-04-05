@@ -19,12 +19,13 @@ class ChatTurn(BaseModel):
 
 
 class AgentRequest(BaseModel):
-    provider: Literal["claude", "openai", "gemini"]
+    provider: Literal["claude", "openai", "gemini", "openrouter"]
     apiKey: str
     projectFiles: list[ProjectFile]
     chatHistory: list[ChatTurn]
     userMessage: str
     attachments: Optional[list[Attachment]] = None
+    openrouterModel: Optional[str] = None
 
 
 class FileChange(BaseModel):

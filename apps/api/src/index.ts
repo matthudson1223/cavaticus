@@ -3,11 +3,11 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import cookie from '@fastify/cookie';
 import session from '@fastify/session';
-import { createServer } from 'node:http';
 import { authRoutes } from './routes/auth.js';
 import { projectRoutes } from './routes/projects.js';
 import { fileRoutes } from './routes/files.js';
 import { settingsRoutes } from './routes/settings.js';
+import { modelRoutes } from './routes/models.js';
 import { createSocketServer } from './ws/handler.js';
 
 const app = Fastify({ logger: true });
@@ -31,12 +31,12 @@ await app.register(authRoutes);
 await app.register(projectRoutes);
 await app.register(fileRoutes);
 await app.register(settingsRoutes);
+await app.register(modelRoutes);
 
 app.get('/health', async () => ({ status: 'ok' }));
 
-const httpServer = createServer(app.server);
-createSocketServer(httpServer as Parameters<typeof createSocketServer>[0]);
-
 const port = Number(process.env['PORT'] ?? 8080);
 await app.listen({ port, host: '0.0.0.0' });
+
+createSocketServer(app.server);
 console.log(`API listening on :${port}`);

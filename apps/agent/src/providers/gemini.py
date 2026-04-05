@@ -74,7 +74,7 @@ async def run_gemini(request: AgentRequest) -> AsyncGenerator[str, None]:
 
     while True:
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=messages,
             config=types.GenerateContentConfig(
                 system_instruction=system,
