@@ -1,5 +1,10 @@
 import { Outlet } from '@tanstack/react-router';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 
 export function rootComponent() {
-  return <Outlet />;
+  return (
+    <ErrorBoundary>
+      <Outlet />
+    </ErrorBoundary>
+  );
 }

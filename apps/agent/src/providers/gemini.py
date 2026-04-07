@@ -31,11 +31,12 @@ async def run_gemini(request: AgentRequest) -> AsyncGenerator[str, None]:
     ]
 
     response_text = ""
-    logger.debug(f"Gemini: model=gemini-2.5-flash, tools={len(tools)}, files={len(fs)}")
+    model = request.model or "gemini-2.5-flash"
+    logger.debug(f"Gemini: model={model}, tools={len(tools)}, files={len(fs)}")
 
     while True:
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=model,
             contents=messages,
             config=types.GenerateContentConfig(
                 system_instruction=system,
@@ -89,4 +90,6 @@ async def run_gemini(request: AgentRequest) -> AsyncGenerator[str, None]:
         "type": "done",
         "responseText": response_text,
         "fileChanges": [fc.model_dump() for fc in seen.values()],
+        "taskUpdates": [],
+        "memoryUpdates": {},
     }) + "\n"

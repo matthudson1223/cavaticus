@@ -10,6 +10,8 @@ import { settingsRoutes } from './routes/settings.js';
 import { modelRoutes } from './routes/models.js';
 import { taskRoutes } from './routes/tasks.js';
 import { memoryRoutes } from './routes/memories.js';
+import { chatRoutes } from './routes/chat.js';
+import { exportRoutes } from './routes/export.js';
 import { createSocketServer } from './ws/handler.js';
 
 const debug = process.env['DEBUG'] === 'cavaticus';
@@ -39,11 +41,13 @@ await app.register(settingsRoutes);
 await app.register(modelRoutes);
 await app.register(taskRoutes);
 await app.register(memoryRoutes);
+await app.register(chatRoutes);
+await app.register(exportRoutes);
 
 app.get('/health', async () => ({ status: 'ok' }));
 
 const port = Number(process.env['PORT'] ?? 8080);
 await app.listen({ port, host: '0.0.0.0' });
 
-createSocketServer(app.server);
+createSocketServer(app.server, app);
 console.log(`API listening on :${port}`);

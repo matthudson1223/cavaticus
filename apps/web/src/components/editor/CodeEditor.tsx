@@ -4,6 +4,7 @@ import { css } from '@codemirror/lang-css';
 import { javascript } from '@codemirror/lang-javascript';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { useCallback, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useProjectStore } from '../../stores/projectStore';
 import { api } from '../../lib/api';
 import type { ProjectFile } from '@cavaticus/shared';
@@ -26,6 +27,17 @@ export function CodeEditor() {
   const activeFileId = useProjectStore((s) => s.activeFileId);
   const updateFileContent = useProjectStore((s) => s.updateFileContent);
   const project = useProjectStore((s) => s.project);
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: async () => {
+      try {
+        const response = await api.get<any>('/api/v1/settings');
+        return response;
+      } catch {
+        return null;
+      }
+    },
+  });
 
   const activeFile = files.find((f) => f.id === activeFileId);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -57,6 +69,8 @@ export function CodeEditor() {
     );
   }
 
+  const fontSize = settings?.editorFontSize ?? 14;
+
   return (
     <CodeMirror
       value={activeFile.content}
@@ -64,7 +78,7 @@ export function CodeEditor() {
       extensions={getExtensions(activeFile.mimeType)}
       theme={oneDark}
       height="100%"
-      style={{ height: '100%', fontSize: 14 }}
+      style={{ height: '100%', fontSize }}
     />
   );
 }

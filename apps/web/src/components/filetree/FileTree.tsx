@@ -203,6 +203,111 @@ function RenameDialog({ fileName, isOpen, isLoading, onClose, onConfirm }: Renam
   );
 }
 
+interface NewFileDialogProps {
+  isOpen: boolean;
+  isLoading: boolean;
+  onClose: () => void;
+  onConfirm: (fileName: string) => Promise<void>;
+}
+
+function NewFileDialog({ isOpen, isLoading, onClose, onConfirm }: NewFileDialogProps) {
+  const [fileName, setFileName] = useState('');
+
+  if (!isOpen) return null;
+
+  const handleSubmit = async () => {
+    if (fileName.trim()) {
+      await onConfirm(fileName.trim());
+      setFileName('');
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        zIndex: 1000,
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: 'var(--bg-elevated)',
+          padding: '20px',
+          borderRadius: '8px',
+          minWidth: '300px',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 style={{ margin: '0 0 16px 0', fontSize: '16px', fontWeight: 'bold', color: 'var(--text)' }}>
+          New File
+        </h2>
+        <input
+          type="text"
+          value={fileName}
+          onChange={(e) => setFileName(e.target.value)}
+          placeholder="filename.txt"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleSubmit();
+            if (e.key === 'Escape') onClose();
+          }}
+          autoFocus
+          style={{
+            width: '100%',
+            padding: '8px 12px',
+            marginBottom: '16px',
+            border: '1px solid var(--border)',
+            borderRadius: '4px',
+            background: 'var(--bg)',
+            color: 'var(--text)',
+            fontSize: '14px',
+            boxSizing: 'border-box',
+          }}
+        />
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+          <button
+            onClick={onClose}
+            disabled={isLoading}
+            style={{
+              padding: '8px 16px',
+              border: '1px solid var(--border)',
+              borderRadius: '4px',
+              background: 'var(--bg)',
+              color: 'var(--text)',
+              cursor: 'pointer',
+              fontSize: '14px',
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={isLoading || !fileName.trim()}
+            style={{
+              padding: '8px 16px',
+              border: 'none',
+              borderRadius: '4px',
+              background: 'var(--accent)',
+              color: '#fff',
+              cursor: isLoading || !fileName.trim() ? 'not-allowed' : 'pointer',
+              fontSize: '14px',
+              opacity: isLoading || !fileName.trim() ? 0.6 : 1,
+            }}
+          >
+            {isLoading ? 'Creating...' : 'Create'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface DeleteDialogProps {
   fileName: string;
   isOpen: boolean;
@@ -411,19 +516,74 @@ function FileNode({ node, depth, projectId }: FileNodeProps) {
 export function FileTree() {
   const files = useProjectStore((s) => s.files);
   const project = useProjectStore((s) => s.project);
+  const addFile = useProjectStore((s) => s.addFile);
   const tree = buildTree(files);
+  const [newFileOpen, setNewFileOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleCreateFile = async (fileName: string) => {
+    if (!project) return;
+
+    setIsLoading(true);
+    try {
+      const result = await api.post<{ file: ProjectFile }>(
+        `/api/v1/projects/${project.id}/files`,
+        { path: fileName }
+      );
+      addFile(result.file);
+      setNewFileOpen(false);
+    } catch (err) {
+      alert(`Failed to create file: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <div
       className="h-full overflow-y-auto py-2"
       style={{ borderRight: '1px solid var(--border)' }}
     >
-      <p className="px-3 py-1 text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
-        Files
-      </p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+        <p className="px-3 py-1 text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+          Files
+        </p>
+        <button
+          onClick={() => setNewFileOpen(true)}
+          style={{
+            width: '24px',
+            height: '24px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            border: 'none',
+            borderRadius: '4px',
+            background: 'transparent',
+            color: 'var(--text-muted)',
+            cursor: 'pointer',
+            fontSize: '16px',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'var(--bg-hover)';
+            e.currentTarget.style.color = 'var(--text)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.color = 'var(--text-muted)';
+          }}
+        >
+          +
+        </button>
+      </div>
       {tree.map((node) => (
         <FileNode key={node.path} node={node} depth={0} projectId={project?.id} />
       ))}
+      <NewFileDialog
+        isOpen={newFileOpen}
+        isLoading={isLoading}
+        onClose={() => setNewFileOpen(false)}
+        onConfirm={handleCreateFile}
+      />
     </div>
   );
 }

@@ -4,10 +4,10 @@
 Building a greenfield web-based website editor where users collaborate with AI agents to create and modify websites. Users control text, elements, and layout while AI handles code generation. Users bring their own LLM subscriptions (Claude, OpenAI, Gemini). Deployed on Railway.
 
 ## Tech Stack
-- **Frontend**: React 19 + TypeScript, Vite 6, CodeMirror 6, GrapesJS (visual editor), Konva.js + html2canvas (screenshot markup), Zustand, TanStack Query/Router, Tailwind CSS 4, Radix UI, Socket.IO client
-- **Backend**: Fastify 5 + TypeScript, Drizzle ORM, PostgreSQL, Redis + BullMQ, AES-256-GCM encryption for API keys
+- **Frontend**: React 19 + TypeScript, Vite 6, CodeMirror 6, GrapesJS (visual editor), Zustand, TanStack Query/Router, Tailwind CSS 4, Radix UI, Socket.IO client
+- **Backend**: Fastify 5 + TypeScript, Drizzle ORM, PostgreSQL, Fastify sessions (httpOnly cookies), AES-256-GCM encryption for API keys
 - **Agent Sidecar**: Python 3.12, FastAPI, anthropic/openai/google-genai SDKs, in-memory file tool execution
-- **Infra**: Railway (web, api, agent, postgres, redis services), pnpm monorepo with Turborepo
+- **Infra**: Railway (web, api, agent, postgres services), pnpm monorepo with Turborepo
 
 ## Project Structure
 ```
@@ -30,10 +30,10 @@ cavaticus/
 │   ├── api/          # Fastify backend
 │   │   └── src/
 │   │       ├── db/              # Drizzle schema + migrations
-│   │       ├── routes/          # auth, projects, files, settings, export, chat
-│   │       ├── ws/              # WebSocket handler + events
-│   │       ├── services/        # crypto, agent client, github, export
-│   │       └── middleware/      # auth
+│   │       ├── routes/          # auth, projects, files, settings, export, chat, tasks, memories
+│   │       ├── ws/              # WebSocket handler + events (Socket.IO with session auth)
+│   │       ├── services/        # crypto, agent client
+│   │       └── middleware/      # auth (requireAuth)
 │   └── agent/        # Python FastAPI sidecar
 │       └── src/
 │           ├── routers/agent.py # POST /run — LLM tool-use loop
@@ -49,15 +49,17 @@ cavaticus/
 - **projects**: id, user_id FK, name, description, timestamps
 - **files**: id, project_id FK, path, content, mime_type, timestamps; UNIQUE(project_id, path)
 - **chat_messages**: id, project_id FK, role (user|assistant|system), content, model, tokens, timestamps
-- **sessions**: id, user_id FK, token, expires_at, created_at
+- **tasks**: id, project_id FK, user_id FK, subject, description, status, activeForm, blocks, blockedBy, metadata, timestamps
+- **memories**: id, user_id FK, project_id FK (optional), name, content, type, description, confidence, scope, timestamps
 
 ## Core Workflows
 
 ### 1. Authentication
 - Signup/login with email + password
 - Password hashed with bcrypt, salted
-- JWT token issued on login, stored in httpOnly cookie
-- Protected routes check cookie + verify token signature
+- Session ID issued on login, stored in httpOnly cookie via Fastify sessions
+- Protected routes check session cookie via `requireAuth` middleware
+- WebSocket connections authenticated via session cookie parsing in Socket.IO middleware
 
 ### 2. Project Creation
 - User creates project (name, description)
@@ -145,8 +147,14 @@ Frontend (ChatPanel)
 - ✅ Multi-LLM support (Claude, OpenAI, Gemini)
 - ✅ File management
 - ✅ Project export
+- ✅ Chat history persistence
+- ✅ Task & memory management
+- ✅ WebSocket authentication
+- ✅ Font size settings
 
 ### Phase 2 (Planned)
+- Security hardening (CSRF protection, CSP headers, Redis session store)
+- Screenshot markup (Konva.js based)
 - Real-time collaboration (CRDT-based, Yjs)
 - GitHub integration (clone repo, auto-commit)
 - Component library + reusable blocks
@@ -168,14 +176,13 @@ Frontend (ChatPanel)
 2. **api** (Node.js) — Fastify backend
 3. **agent** (Python) — FastAPI sidecar
 4. **postgres** (PostgreSQL 15) — Drizzle migrations auto-run
-5. **redis** (Redis 7) — BullMQ queue for async jobs
 
 **Environment Variables:**
 - `DATABASE_URL` — PostgreSQL connection
-- `REDIS_URL` — Redis connection
-- `JWT_SECRET` — signing key for auth tokens
-- `ENCRYPTION_KEY` — root key for API key encryption (derived from user auth in app)
+- `SESSION_SECRET` — signing key for Fastify sessions
+- `ENCRYPTION_KEY` — root key for API key encryption
 - `OPENROUTER_API_KEY` (optional) — for openrouter/auto fallback
+- `NODE_ENV` — 'development' or 'production' (affects session cookie security)
 
 **Monitoring:**
 - Railway logs aggregation (stderr captured)
@@ -227,9 +234,14 @@ cp .env.example .env
 - Check API key validity for selected provider
 
 **WebSocket disconnections:**
-- Check Redis connection (if session store)
-- Verify JWT token expiry
-- Check network (firewall, proxy)
+- Verify session cookie is present and valid
+- Check network (firewall, proxy, CORS origin)
+- Ensure Socket.IO middleware is not rejecting connections
+
+**Chat history not loading:**
+- Verify `GET /api/v1/projects/:id/chat` returns 200
+- Check user owns the project (ownership check in endpoint)
+- Clear browser cache and reload
 
 **Database migrations fail:**
 - Check `DATABASE_URL` format
@@ -238,5 +250,5 @@ cp .env.example .env
 
 **Files not saving:**
 - Check project `project_id` in URL
-- Verify auth token in cookie
+- Verify session cookie is valid
 - Check disk space (Railway ephemeral storage limit)
