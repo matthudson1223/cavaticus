@@ -37,7 +37,7 @@ export async function settingsRoutes(app: FastifyInstance) {
       const userId = req.session.userId!;
       const schema = z.object({
         theme: z.enum(['light', 'dark']).optional(),
-        defaultProvider: z.enum(['claude', 'openai', 'gemini', 'openrouter']).nullable().optional(),
+        defaultProvider: z.string().nullable().optional(),
         editorFontSize: z.number().int().min(8).max(32).optional(),
       });
       const parsed = schema.safeParse(req.body);
@@ -76,7 +76,7 @@ export async function settingsRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const userId = req.session.userId!;
       const schema = z.object({
-        provider: z.enum(['claude', 'openai', 'gemini', 'openrouter']),
+        provider: z.string().min(1).max(64),
         key: z.string().min(1),
       });
       const parsed = schema.safeParse(req.body);

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { debug } from '../lib/debug';
 import type { Project, ProjectFile } from '@cavaticus/shared';
 
 interface ProjectState {
@@ -16,14 +17,26 @@ export const useProjectStore = create<ProjectState>((set) => ({
   project: null,
   files: [],
   activeFileId: null,
-  setProject: (project) => set({ project }),
-  setFiles: (files) => set({ files }),
-  setActiveFile: (activeFileId) => set({ activeFileId }),
-  updateFileContent: (id, content) =>
+  setProject: (project) => {
+    debug('store', `setProject: ${project?.name}`);
+    set({ project });
+  },
+  setFiles: (files) => {
+    debug('store', `setFiles: ${files.length} files`);
+    set({ files });
+  },
+  setActiveFile: (activeFileId) => {
+    debug('store', `setActiveFile: ${activeFileId}`);
+    set({ activeFileId });
+  },
+  updateFileContent: (id, content) => {
+    debug('store', `updateFileContent: id=${id} (${content.length} chars)`);
     set((s) => ({
       files: s.files.map((f) => (f.id === id ? { ...f, content } : f)),
-    })),
-  upsertFile: (file) =>
+    }));
+  },
+  upsertFile: (file) => {
+    debug('store', `upsertFile: ${file.path}`);
     set((s) => {
       const exists = s.files.find((f) => f.id === file.id);
       return {
@@ -31,5 +44,6 @@ export const useProjectStore = create<ProjectState>((set) => ({
           ? s.files.map((f) => (f.id === file.id ? file : f))
           : [...s.files, file],
       };
-    }),
+    });
+  },
 }));

@@ -1,4 +1,4 @@
-export type ApiKeyProvider = 'claude' | 'openai' | 'gemini' | 'openrouter';
+export type ApiKeyProvider = 'claude' | 'openai' | 'gemini' | 'openrouter' | 'unified';
 
 export interface UserModel {
   id: string;
@@ -69,6 +69,10 @@ export interface AgentRequest {
   userMessage: string;
   attachments?: Attachment[];
   openrouterModel?: string;
+  projectId?: string;
+  // Unified multi-provider fields — set model to use any supported provider
+  model?: string;       // e.g. "claude-opus-4-6", "gpt-4o", "ollama/llama3.3"
+  customBaseUrl?: string;
 }
 
 export interface AgentResponse {

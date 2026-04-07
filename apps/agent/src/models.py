@@ -19,13 +19,17 @@ class ChatTurn(BaseModel):
 
 
 class AgentRequest(BaseModel):
-    provider: Literal["claude", "openai", "gemini", "openrouter"]
+    provider: str  # "claude" | "openai" | "gemini" | "openrouter" | "unified"
     apiKey: str
     projectFiles: list[ProjectFile]
     chatHistory: list[ChatTurn]
     userMessage: str
     attachments: Optional[list[Attachment]] = None
     openrouterModel: Optional[str] = None
+    projectId: str = ""
+    # Unified provider fields
+    model: str = ""             # e.g. "claude-opus-4-6", "gpt-4o", "ollama/llama3.3"
+    customBaseUrl: str = ""     # for provider="custom"
 
 
 class FileChange(BaseModel):

@@ -1,6 +1,7 @@
 export const WS_EVENTS = {
   // Client -> Server
   CHAT_SEND: 'chat:send',
+  CHAT_CANCEL: 'chat:cancel',
   // Server -> Client
   CHAT_CHUNK: 'chat:chunk',
   CHAT_DONE: 'chat:done',
@@ -16,6 +17,10 @@ export interface ChatSendPayload {
   content: string;
   attachments?: import('./types.js').Attachment[];
   modelId?: string;
+}
+
+export interface ChatCancelPayload {
+  messageId: string;
 }
 
 export interface ChatChunkPayload {

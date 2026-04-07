@@ -10,7 +10,10 @@ import { settingsRoutes } from './routes/settings.js';
 import { modelRoutes } from './routes/models.js';
 import { createSocketServer } from './ws/handler.js';
 
-const app = Fastify({ logger: true });
+const debug = process.env['DEBUG'] === 'cavaticus';
+const app = Fastify({
+  logger: debug ? { level: 'debug' } : true
+});
 
 await app.register(cors, {
   origin: process.env['WEB_ORIGIN'] ?? 'http://localhost:5173',

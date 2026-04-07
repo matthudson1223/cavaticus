@@ -13,9 +13,36 @@ import { runAgent } from '../services/agent.js';
 import { WS_EVENTS } from '@cavaticus/shared';
 import type {
   ChatSendPayload,
+  ChatCancelPayload,
   AgentRequest,
   ApiKeyProvider,
 } from '@cavaticus/shared';
+
+/** Detect which provider a model string belongs to (mirrors Python detect_provider). */
+function detectProviderFromModel(modelId: string): string | null {
+  if (modelId.startsWith('claude-')) return 'claude';
+  if (modelId.startsWith('gpt-') || /^o[13]/.test(modelId)) return 'openai';
+  if (modelId.startsWith('gemini-')) return 'gemini';
+  if (modelId.startsWith('deepseek-')) return 'deepseek';
+  if (modelId.startsWith('moonshot-') || modelId.startsWith('kimi-')) return 'kimi';
+  if (modelId.startsWith('qwen') || modelId.startsWith('qwq-')) return 'qwen';
+  if (modelId.startsWith('glm-')) return 'zhipu';
+  // local/custom explicit prefix — everything else with a slash is an OpenRouter org/model
+  if (modelId.includes('/')) {
+    const prefix = modelId.split('/')[0]!;
+    if (['ollama', 'lmstudio', 'custom'].includes(prefix)) return prefix;
+    return 'openrouter';
+  }
+  return null;
+}
+
+const debug = process.env['DEBUG'] === 'cavaticus';
+const log = (msg: string) => {
+  if (debug) console.log(`[cavaticus:ws] ${new Date().toISOString()} ${msg}`);
+};
+
+// Track active agent streams by messageId so we can abort them
+const activeStreams = new Map<string, { aborted: boolean }>();
 
 export function createSocketServer(httpServer: HttpServer): SocketIOServer {
   const io = new SocketIOServer(httpServer, {
@@ -31,6 +58,7 @@ export function createSocketServer(httpServer: HttpServer): SocketIOServer {
 
     socket.on(WS_EVENTS.CHAT_SEND, async (payload: ChatSendPayload) => {
       const { projectId, content, attachments, modelId } = payload;
+      log(`CHAT_SEND: projectId=${projectId}, content_len=${content.length}, modelId=${modelId}`);
 
       // TODO: Extract userId from session cookie
       // For now, skip ownership check
@@ -42,30 +70,31 @@ export function createSocketServer(httpServer: HttpServer): SocketIOServer {
       if (!project) return;
       const userId = project.userId;
 
+      // Load history and files BEFORE inserting the current user message,
+      // so the current turn isn't duplicated in chatHistory + userMessage.
+      const [projectFiles, rawHistory] = await Promise.all([
+        db.select({ path: files.path, content: files.content })
+          .from(files)
+          .where(eq(files.projectId, projectId)),
+        db.select({ role: chatMessages.role, content: chatMessages.content })
+          .from(chatMessages)
+          .where(eq(chatMessages.projectId, projectId))
+          .orderBy(asc(chatMessages.createdAt))
+          .limit(50),
+      ]);
+
+      // Drop empty assistant messages left by failed/cancelled turns
+      const history = rawHistory.filter((h) => h.content.trim() !== '');
+
       // Persist user message
-      const [userMsg] = await db
+      await db
         .insert(chatMessages)
         .values({
           projectId,
           role: 'user',
           content,
           attachments: attachments ?? [],
-        })
-        .returning();
-
-      // Load project files
-      const projectFiles = await db
-        .select({ path: files.path, content: files.content })
-        .from(files)
-        .where(eq(files.projectId, projectId));
-
-      // Load chat history (last 50)
-      const history = await db
-        .select({ role: chatMessages.role, content: chatMessages.content })
-        .from(chatMessages)
-        .where(eq(chatMessages.projectId, projectId))
-        .orderBy(asc(chatMessages.createdAt))
-        .limit(50);
+        });
 
       // Get default provider + API key
       const [settings] = await db
@@ -74,17 +103,27 @@ export function createSocketServer(httpServer: HttpServer): SocketIOServer {
         .where(eq(userSettings.userId, userId))
         .limit(1);
 
-      const provider =
-        (settings?.defaultProvider as ApiKeyProvider | null) ?? 'claude';
-      const apiKey = await getDecryptedApiKey(userId, provider);
+      // Detect provider: prefer auto-detecting from modelId, fall back to saved default
+      const detectedProvider = modelId ? detectProviderFromModel(modelId) : null;
+      const provider = detectedProvider
+        ?? (settings?.defaultProvider as ApiKeyProvider | null)
+        ?? 'claude';
 
-      if (!apiKey) {
+      // Local providers (ollama, lmstudio) don't need an API key
+      const localProviders = new Set(['ollama', 'lmstudio']);
+      const apiKey = localProviders.has(provider)
+        ? ''
+        : await getDecryptedApiKey(userId, provider);
+
+      if (!localProviders.has(provider) && !apiKey) {
+        log(`ERROR: No API key for provider=${provider}`);
         socket.emit(WS_EVENTS.AGENT_ERROR, {
-          error: `No API key stored for provider "${provider}"`,
+          error: `No API key stored for provider "${provider}". Add it in Settings.`,
         });
         return;
       }
 
+      log(`Calling agent: provider=${provider}, model=${modelId || '(default)'}, files=${projectFiles.length}, history=${history.length}`);
       socket.emit(WS_EVENTS.AGENT_STATUS, { status: 'thinking' });
 
       // Create placeholder assistant message
@@ -97,9 +136,10 @@ export function createSocketServer(httpServer: HttpServer): SocketIOServer {
       let fullText = '';
 
       const agentRequest: AgentRequest = {
-        provider,
-        apiKey,
+        provider: provider as ApiKeyProvider,
+        apiKey: apiKey ?? '',
         projectFiles,
+        projectId,
         chatHistory: history.map((h) => ({
           role: h.role as 'user' | 'assistant',
           content: h.content,
@@ -107,15 +147,33 @@ export function createSocketServer(httpServer: HttpServer): SocketIOServer {
         userMessage: content,
         attachments,
         openrouterModel: provider === 'openrouter' ? modelId : undefined,
+        // Unified provider: pass model string directly for any provider
+        model: modelId || undefined,
       };
 
       try {
+        const streamContext = { aborted: false };
+        activeStreams.set(messageId, streamContext);
+
         for await (const event of runAgent(agentRequest)) {
+          // Check if stream was cancelled
+          if (streamContext.aborted) {
+            log(`Stream cancelled for messageId=${messageId}`);
+            break;
+          }
+
           if (event.type === 'chunk') {
             fullText += event.text;
+            log(`CHAT_CHUNK: ${event.text.length} chars`);
             socket.emit(WS_EVENTS.CHAT_CHUNK, { messageId, chunk: event.text });
+          } else if (event.type === 'error') {
+            log(`AGENT_ERROR: ${event.text}`);
+            socket.emit(WS_EVENTS.AGENT_ERROR, { error: event.text });
+            socket.emit(WS_EVENTS.AGENT_STATUS, { status: 'idle' });
+            break;
           } else if (event.type === 'done') {
             fullText = event.responseText;
+            log(`CHAT_DONE: response_len=${event.responseText.length}, changes=${event.fileChanges.length}`);
 
             // Persist final assistant message
             await db
@@ -165,13 +223,41 @@ export function createSocketServer(httpServer: HttpServer): SocketIOServer {
               messageId,
               message: finalMsg,
             });
+            log('Agent completed successfully');
             socket.emit(WS_EVENTS.AGENT_STATUS, { status: 'idle' });
           }
         }
+
+        // Handle early termination (cancellation)
+        if (streamContext.aborted) {
+          log(`Agent cancelled, updating message with partial content`);
+          await db
+            .update(chatMessages)
+            .set({ content: fullText || 'Cancelled' })
+            .where(eq(chatMessages.id, messageId));
+          socket.emit(WS_EVENTS.AGENT_STATUS, { status: 'idle' });
+        }
       } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+        log(`ERROR: ${errorMsg}`);
         socket.emit(WS_EVENTS.AGENT_ERROR, {
-          error: err instanceof Error ? err.message : 'Unknown error',
+          error: errorMsg,
         });
+        socket.emit(WS_EVENTS.AGENT_STATUS, { status: 'idle' });
+      } finally {
+        // Clean up stream context
+        activeStreams.delete(messageId);
+      }
+    });
+
+    socket.on(WS_EVENTS.CHAT_CANCEL, (payload: ChatCancelPayload) => {
+      const { messageId } = payload;
+      log(`CHAT_CANCEL: messageId=${messageId}`);
+
+      const stream = activeStreams.get(messageId);
+      if (stream) {
+        stream.aborted = true;
+        activeStreams.delete(messageId);
         socket.emit(WS_EVENTS.AGENT_STATUS, { status: 'idle' });
       }
     });

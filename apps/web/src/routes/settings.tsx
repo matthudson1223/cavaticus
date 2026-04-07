@@ -1,14 +1,19 @@
 import { Link } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '../lib/api';
+import { isDebugEnabled } from '../lib/debug';
 import type { ApiKeyProvider, UserSettings, UserModel } from '@cavaticus/shared';
 
-const PROVIDERS: { id: ApiKeyProvider; label: string; placeholder: string }[] = [
-  { id: 'claude', label: 'Claude (Anthropic)', placeholder: 'sk-ant-…' },
-  { id: 'openai', label: 'OpenAI', placeholder: 'sk-…' },
-  { id: 'gemini', label: 'Gemini (Google)', placeholder: 'AIza…' },
-  { id: 'openrouter', label: 'OpenRouter', placeholder: 'sk-or-…' },
+const PROVIDERS: { id: string; label: string; placeholder: string }[] = [
+  { id: 'claude',    label: 'Claude (Anthropic)',  placeholder: 'sk-ant-…' },
+  { id: 'openai',   label: 'OpenAI',              placeholder: 'sk-…' },
+  { id: 'gemini',   label: 'Gemini (Google)',      placeholder: 'AIza…' },
+  { id: 'openrouter', label: 'OpenRouter',         placeholder: 'sk-or-…' },
+  { id: 'deepseek', label: 'DeepSeek',             placeholder: 'sk-…' },
+  { id: 'kimi',     label: 'Kimi (Moonshot AI)',   placeholder: 'sk-…' },
+  { id: 'qwen',     label: 'Qwen (Alibaba)',        placeholder: 'sk-…' },
+  { id: 'zhipu',    label: 'Zhipu GLM',            placeholder: 'sk-…' },
 ];
 
 export function settingsComponent() {
@@ -66,6 +71,23 @@ export function settingsComponent() {
   const [modelInput, setModelInput] = useState('');
   const [modelLabel, setModelLabel] = useState('');
   const [modelError, setModelError] = useState('');
+  const [verboseMode, setVerboseMode] = useState(isDebugEnabled);
+
+  // Keep verbose state in sync when localStorage changes in another tab
+  useEffect(() => {
+    setVerboseMode(localStorage.getItem('cavaticus_debug') === 'true');
+  }, []);
+
+  const toggleVerboseMode = () => {
+    const newState = !verboseMode;
+    if (newState) {
+      localStorage.setItem('cavaticus_debug', 'true');
+    } else {
+      localStorage.removeItem('cavaticus_debug');
+    }
+    setVerboseMode(newState);
+  };
+
   const storedProviders = new Set(data?.storedProviders ?? []);
   const models = modelsData?.models ?? [];
   const settings = data?.settings;
@@ -131,9 +153,17 @@ export function settingsComponent() {
           </div>
         </section>
 
-        {storedProviders.has('openrouter') && (
-          <section>
-            <h2 className="text-base font-semibold mb-4" style={{ color: 'var(--text)' }}>OpenRouter Models</h2>
+        <section>
+          <h2 className="text-base font-semibold mb-1" style={{ color: 'var(--text)' }}>Local Models</h2>
+          <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
+            Ollama and LM Studio run locally — no API key needed. Start your local server, then type a model like{' '}
+            <code style={{ color: 'var(--accent)' }}>ollama/llama3.3</code> or{' '}
+            <code style={{ color: 'var(--accent)' }}>lmstudio/my-model</code> in the model picker.
+          </p>
+        </section>
+
+        <section>
+          <h2 className="text-base font-semibold mb-4" style={{ color: 'var(--text)' }}>Saved Models</h2>
             <div className="space-y-4">
               <div
                 className="rounded-xl p-4 space-y-3"
@@ -145,7 +175,7 @@ export function settingsComponent() {
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g. google/gemma-4-26b-a4b-it or mistralai/mistral-7b-instruct"
+                    placeholder="e.g. deepseek-chat, ollama/llama3.3, gpt-4o, claude-opus-4-6"
                     value={modelInput}
                     onChange={(e) => {
                       setModelInput(e.target.value);
@@ -231,7 +261,6 @@ export function settingsComponent() {
               )}
             </div>
           </section>
-        )}
 
         <section>
           <h2 className="text-base font-semibold mb-4" style={{ color: 'var(--text)' }}>Preferences</h2>
@@ -243,7 +272,7 @@ export function settingsComponent() {
               <p className="text-sm" style={{ color: 'var(--text)' }}>Default Provider</p>
               <select
                 value={settings?.defaultProvider ?? ''}
-                onChange={(e) => saveSettings.mutate({ defaultProvider: (e.target.value as ApiKeyProvider) || null })}
+                onChange={(e) => saveSettings.mutate({ defaultProvider: e.target.value || null })}
                 className="px-3 py-1.5 rounded-lg text-sm"
                 style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }}
               >
@@ -251,6 +280,8 @@ export function settingsComponent() {
                 {PROVIDERS.map((p) => (
                   <option key={p.id} value={p.id}>{p.label}</option>
                 ))}
+                <option value="ollama">Ollama (local)</option>
+                <option value="lmstudio">LM Studio (local)</option>
               </select>
             </div>
 
@@ -266,6 +297,30 @@ export function settingsComponent() {
                 onChange={(e) => saveSettings.mutate({ editorFontSize: Number(e.target.value) })}
                 className="w-32"
               />
+            </div>
+
+            <div className="flex items-center justify-between pt-3" style={{ borderTop: '1px solid var(--border)' }}>
+              <div>
+                <p className="text-sm font-medium" style={{ color: 'var(--text)' }}>Verbose Mode</p>
+                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                  Enable detailed logging for debugging
+                </p>
+              </div>
+              <button
+                onClick={toggleVerboseMode}
+                className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+                style={{
+                  background: verboseMode ? 'var(--accent)' : 'var(--bg-3)',
+                  border: '1px solid var(--border)',
+                }}
+              >
+                <span
+                  className="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
+                  style={{
+                    transform: verboseMode ? 'translateX(1.25rem)' : 'translateX(0.25rem)',
+                  }}
+                />
+              </button>
             </div>
           </div>
         </section>

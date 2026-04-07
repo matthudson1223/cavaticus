@@ -13,7 +13,12 @@ export interface AgentDone {
   fileChanges: FileChange[];
 }
 
-export type AgentEvent = AgentChunk | AgentDone;
+export interface AgentError {
+  type: 'error';
+  text: string;
+}
+
+export type AgentEvent = AgentChunk | AgentDone | AgentError;
 
 export async function* runAgent(
   request: AgentRequest,

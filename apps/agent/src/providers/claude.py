@@ -1,89 +1,43 @@
 import json
+import logging
 from typing import AsyncGenerator
+
 import anthropic
-from ..models import AgentRequest, FileChange
 
-SYSTEM_PROMPT = """You are an AI web developer assistant. The user is building a website.
-You have access to the following project files:
-{file_tree}
+from ..models import AgentRequest
+from ..tools import ToolContext, dispatch_tool, registry
+from .shared import SYSTEM_PROMPT, build_file_tree, shell_tools_excluded
 
-Use the provided tools to read and modify files. Make targeted edits.
-Always explain what you changed and why."""
-
-TOOLS = [
-    {
-        "name": "read_file",
-        "description": "Read the content of a file in the project.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "path": {"type": "string", "description": "File path to read"}
-            },
-            "required": ["path"],
-        },
-    },
-    {
-        "name": "write_file",
-        "description": "Create or overwrite a file in the project.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "content": {"type": "string"},
-            },
-            "required": ["path", "content"],
-        },
-    },
-    {
-        "name": "edit_file",
-        "description": "Replace a specific substring in a file with new content.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "old_string": {"type": "string"},
-                "new_string": {"type": "string"},
-            },
-            "required": ["path", "old_string", "new_string"],
-        },
-    },
-    {
-        "name": "list_files",
-        "description": "List all files in the project.",
-        "input_schema": {"type": "object", "properties": {}},
-    },
-]
+logger = logging.getLogger(__name__)
 
 
 async def run_claude(request: AgentRequest) -> AsyncGenerator[str, None]:
     client = anthropic.Anthropic(api_key=request.apiKey)
 
-    # Build in-memory file system
     fs: dict[str, str] = {f.path: f.content for f in request.projectFiles}
-    file_changes: list[FileChange] = []
+    ctx = ToolContext(fs=fs, original_fs=dict(fs), project_id=request.projectId)
 
-    file_tree = "\n".join(f"  - {path}" for path in sorted(fs.keys()))
-    system = SYSTEM_PROMPT.format(file_tree=file_tree)
+    system_text = SYSTEM_PROMPT.format(file_tree=build_file_tree(fs))
+    # Cache the system prompt — stable across all turns in the same project
+    system = [{"type": "text", "text": system_text, "cache_control": {"type": "ephemeral"}}]
+
+    tools = registry.to_anthropic(exclude=shell_tools_excluded(fs))
+    # cache_control is already on the last tool entry from registry.to_anthropic()
+
+    model = request.model or "claude-haiku-4-5-20251001"
 
     # Build message history
     messages = []
-    for turn in request.chatHistory[-20:]:  # last 20 turns
+    for turn in request.chatHistory[-20:]:
         messages.append({"role": turn.role, "content": turn.content})
 
-    # Build the new user message (with optional image attachments)
     if request.attachments:
         content: list = []
         for att in request.attachments:
-            content.append(
-                {
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": att.mimeType,
-                        "data": att.data,
-                    },
-                }
-            )
+            content.append({
+                "type": "image",
+                "source": {"type": "base64", "media_type": att.mimeType, "data": att.data},
+            })
         content.append({"type": "text", "text": request.userMessage})
     else:
         content = request.userMessage  # type: ignore[assignment]
@@ -91,18 +45,19 @@ async def run_claude(request: AgentRequest) -> AsyncGenerator[str, None]:
     messages.append({"role": "user", "content": content})
 
     response_text = ""
+    logger.debug(f"Claude: model={model}, tools={len(tools)}, files={len(fs)}")
 
-    # Agentic tool-use loop
     while True:
+        logger.debug(f"Claude API call: {len(messages)} messages")
         response = client.messages.create(
-            model="claude-opus-4-6",
+            model=model,
             max_tokens=8096,
-            system=system,
+            system=system,  # type: ignore[arg-type]
             messages=messages,
-            tools=TOOLS,  # type: ignore[arg-type]
+            tools=tools,  # type: ignore[arg-type]
         )
+        logger.debug(f"Claude response: stop_reason={response.stop_reason}, blocks={len(response.content)}")
 
-        # Collect text from this turn
         for block in response.content:
             if block.type == "text":
                 response_text += block.text
@@ -116,67 +71,30 @@ async def run_claude(request: AgentRequest) -> AsyncGenerator[str, None]:
             for block in response.content:
                 if block.type != "tool_use":
                     continue
-                tool_input = block.input  # type: ignore[attr-defined]
                 name = block.name  # type: ignore[attr-defined]
+                args = block.input  # type: ignore[attr-defined]
                 tool_use_id = block.id  # type: ignore[attr-defined]
 
-                if name == "list_files":
-                    result = "\n".join(sorted(fs.keys()))
+                logger.debug(f"Tool call: {name} args={list(args.keys())}")
+                yield json.dumps({"type": "tool_use", "name": name}) + "\n"
 
-                elif name == "read_file":
-                    path = tool_input["path"]
-                    result = fs.get(path, f"Error: file '{path}' not found")
+                result = await dispatch_tool(name, args, ctx)
+                logger.debug(f"Tool result: {result[:100]}")
 
-                elif name == "write_file":
-                    path = tool_input["path"]
-                    new_content = tool_input["content"]
-                    action = "modified" if path in fs else "created"
-                    fs[path] = new_content
-                    file_changes.append(
-                        FileChange(path=path, action=action, content=new_content)
-                    )
-                    result = f"Wrote {len(new_content)} bytes to {path}"
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": tool_use_id,
+                    "content": result,
+                })
 
-                elif name == "edit_file":
-                    path = tool_input["path"]
-                    if path not in fs:
-                        result = f"Error: file '{path}' not found"
-                    else:
-                        old = tool_input["old_string"]
-                        new = tool_input["new_string"]
-                        if old not in fs[path]:
-                            result = f"Error: string not found in {path}"
-                        else:
-                            fs[path] = fs[path].replace(old, new, 1)
-                            file_changes.append(
-                                FileChange(
-                                    path=path, action="modified", content=fs[path]
-                                )
-                            )
-                            result = f"Edited {path}"
-                else:
-                    result = f"Unknown tool: {name}"
-
-                tool_results.append(
-                    {"type": "tool_result", "tool_use_id": tool_use_id, "content": result}
-                )
-
-            # Add assistant turn and tool results
             messages.append({"role": "assistant", "content": response.content})  # type: ignore[arg-type]
             messages.append({"role": "user", "content": tool_results})
         else:
-            # Unexpected stop reason
             break
 
-    # Deduplicate file changes — last write wins per path
-    seen: dict[str, FileChange] = {}
-    for fc in file_changes:
-        seen[fc.path] = fc
-
-    yield json.dumps(
-        {
-            "type": "done",
-            "responseText": response_text,
-            "fileChanges": [fc.model_dump() for fc in seen.values()],
-        }
-    ) + "\n"
+    seen = {fc.path: fc for fc in ctx.file_changes}
+    yield json.dumps({
+        "type": "done",
+        "responseText": response_text,
+        "fileChanges": [fc.model_dump() for fc in seen.values()],
+    }) + "\n"
