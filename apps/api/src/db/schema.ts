@@ -134,3 +134,48 @@ export const memories = pgTable(
     uniqueIndex('memories_user_name_scope_idx').on(t.userId, t.name, t.scope),
   ],
 );
+
+export const projectGithub = pgTable(
+  'project_github',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    repoUrl: text('repo_url').notNull(),
+    branch: text('branch').notNull().default('main'),
+    lastCommitSha: text('last_commit_sha'),
+    githubUsername: text('github_username'),
+    encryptedToken: text('encrypted_token').notNull(),
+    iv: text('iv').notNull(),
+    authTag: text('auth_tag').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('project_github_project_idx').on(t.projectId)],
+);
+
+export const templates = pgTable('templates', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  description: text('description'),
+  category: text('category'),
+  thumbnailUrl: text('thumbnail_url'),
+  files: jsonb('files').notNull(), // array of { path, content, mimeType }
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const blocks = pgTable(
+  'blocks',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }), // nullable = system block
+    name: text('name').notNull(),
+    category: text('category'),
+    html: text('html').notNull(),
+    css: text('css').notNull(),
+    thumbnail: text('thumbnail'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('blocks_user_name_idx').on(t.userId, t.name)],
+);

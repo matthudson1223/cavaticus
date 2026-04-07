@@ -60,6 +60,14 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.status(401).send({ error: 'Invalid credentials' });
     }
 
+    // Regenerate session ID on login for security
+    await new Promise<void>((resolve, reject) => {
+      req.session.regenerate((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+
     req.session.userId = user.id;
     return reply.send({
       user: { id: user.id, email: user.email, createdAt: user.createdAt },

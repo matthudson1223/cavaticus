@@ -1,6 +1,5 @@
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { useState } from 'react';
-import { api } from '../../lib/api';
 import { useProjectStore } from '../../stores/projectStore';
 import { FileTree } from '../filetree/FileTree';
 import { CodeEditor } from '../editor/CodeEditor';

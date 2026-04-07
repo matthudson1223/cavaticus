@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { useChatStore } from '../../stores/chatStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useDebugStore, type DebugMessage } from '../../stores/debugStore';
@@ -265,14 +269,78 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div
-        className="max-w-[85%] rounded-xl px-3 py-2 text-sm whitespace-pre-wrap"
+        className="max-w-[85%] rounded-xl px-3 py-2 text-sm"
         style={{
           background: isUser ? 'var(--accent)' : 'var(--bg-3)',
           color: 'var(--text)',
         }}
       >
-        {message.content || (
+        {!message.content ? (
           <span style={{ color: 'var(--text-muted)' }}>▍</span>
+        ) : isUser ? (
+          <div style={{ whiteSpace: 'pre-wrap' }}>{message.content}</div>
+        ) : (
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            className="markdown-content"
+            components={{
+              code(props: any) {
+                const { inline, className, children } = props;
+                const match = /language-(\w+)/.exec(className || '');
+                const language = match?.[1] || 'text';
+                return !inline ? (
+                  <SyntaxHighlighter
+                    style={oneDark}
+                    language={language}
+                  >
+                    {String(children).replace(/\n$/, '')}
+                  </SyntaxHighlighter>
+                ) : (
+                  <code className={className}>
+                    {children}
+                  </code>
+                );
+              },
+              a: ({ ...props }) => (
+                <a
+                  {...props}
+                  style={{
+                    color: 'var(--accent)',
+                    textDecoration: 'underline',
+                    cursor: 'pointer',
+                  }}
+                />
+              ),
+              blockquote: ({ ...props }) => (
+                <blockquote
+                  {...props}
+                  style={{
+                    borderLeft: '3px solid var(--accent)',
+                    paddingLeft: '0.75rem',
+                    marginLeft: 0,
+                    opacity: 0.8,
+                  }}
+                />
+              ),
+              ul: ({ ...props }) => (
+                <ul {...props} style={{ paddingLeft: '1.5rem', margin: '0.5rem 0' }} />
+              ),
+              ol: ({ ...props }) => (
+                <ol {...props} style={{ paddingLeft: '1.5rem', margin: '0.5rem 0' }} />
+              ),
+              h1: ({ ...props }) => (
+                <h1 {...props} style={{ fontSize: '1.5rem', fontWeight: 'bold', marginTop: '0.75rem' }} />
+              ),
+              h2: ({ ...props }) => (
+                <h2 {...props} style={{ fontSize: '1.25rem', fontWeight: 'bold', marginTop: '0.5rem' }} />
+              ),
+              h3: ({ ...props }) => (
+                <h3 {...props} style={{ fontSize: '1.1rem', fontWeight: 'bold', marginTop: '0.5rem' }} />
+              ),
+            }}
+          >
+            {message.content}
+          </ReactMarkdown>
         )}
       </div>
     </div>

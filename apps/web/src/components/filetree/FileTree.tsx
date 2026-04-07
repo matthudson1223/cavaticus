@@ -516,7 +516,7 @@ function FileNode({ node, depth, projectId }: FileNodeProps) {
 export function FileTree() {
   const files = useProjectStore((s) => s.files);
   const project = useProjectStore((s) => s.project);
-  const addFile = useProjectStore((s) => s.addFile);
+  const upsertFile = useProjectStore((s) => s.upsertFile);
   const tree = buildTree(files);
   const [newFileOpen, setNewFileOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -530,7 +530,7 @@ export function FileTree() {
         `/api/v1/projects/${project.id}/files`,
         { path: fileName }
       );
-      addFile(result.file);
+      upsertFile(result.file);
       setNewFileOpen(false);
     } catch (err) {
       alert(`Failed to create file: ${err instanceof Error ? err.message : 'Unknown error'}`);
