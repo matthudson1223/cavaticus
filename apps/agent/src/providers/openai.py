@@ -26,11 +26,12 @@ async def run_openai(request: AgentRequest) -> AsyncGenerator[str, None]:
     messages.append({"role": "user", "content": request.userMessage})
 
     response_text = ""
-    logger.debug(f"OpenAI: model=gpt-4o, tools={len(tools)}, files={len(fs)}")
+    model = request.model or "gpt-4o"
+    logger.debug(f"OpenAI: model={model}, tools={len(tools)}, files={len(fs)}")
 
     while True:
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model=model,
             messages=messages,
             tools=tools,  # type: ignore[arg-type]
             tool_choice="auto",
@@ -63,4 +64,6 @@ async def run_openai(request: AgentRequest) -> AsyncGenerator[str, None]:
         "type": "done",
         "responseText": response_text,
         "fileChanges": [fc.model_dump() for fc in seen.values()],
+        "taskUpdates": [],
+        "memoryUpdates": {},
     }) + "\n"

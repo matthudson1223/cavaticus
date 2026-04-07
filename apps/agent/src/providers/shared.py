@@ -26,9 +26,6 @@ check_syntax, extract_imports, find_unused_code, analyze_css, get_dependency_tre
 ### Quality Assurance
 run_tests, lint_files, type_check, accessibility_audit
 
-### Live Preview
-query_dom, get_console_logs, take_screenshot, test_responsive
-
 ### Version Control & Performance
 git_diff, git_commit, analyze_performance
 

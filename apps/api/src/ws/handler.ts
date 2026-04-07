@@ -1,4 +1,5 @@
 import type { Server as HttpServer } from 'node:http';
+import type { FastifyInstance } from 'fastify';
 import { Server as SocketIOServer } from 'socket.io';
 import { db } from '../db/index.js';
 import {
@@ -46,7 +47,7 @@ const log = (msg: string) => {
 // Track active agent streams by messageId so we can abort them
 const activeStreams = new Map<string, { aborted: boolean }>();
 
-export function createSocketServer(httpServer: HttpServer): SocketIOServer {
+export function createSocketServer(httpServer: HttpServer, app: FastifyInstance): SocketIOServer {
   const io = new SocketIOServer(httpServer, {
     cors: {
       origin: process.env['WEB_ORIGIN'] ?? 'http://localhost:5173',
@@ -54,23 +55,55 @@ export function createSocketServer(httpServer: HttpServer): SocketIOServer {
     },
   });
 
+  // Middleware to extract userId from session cookie
+  io.use(async (socket, next) => {
+    try {
+      const cookies = socket.request.headers.cookie || '';
+      const sessionMatch = cookies.match(/sessionId=([^;]+)/);
+      const sessionId = sessionMatch?.[1];
+
+      if (!sessionId) {
+        return next(new Error('No session found'));
+      }
+
+      // Decode the session from Fastify's session store
+      const session = await app.request.unsignCookie?.(sessionId);
+      if (!session?.value?.userId) {
+        return next(new Error('Invalid or expired session'));
+      }
+
+      socket.data.userId = session.value.userId;
+      next();
+    } catch (err) {
+      next(new Error('Session validation failed'));
+    }
+  });
+
   io.on('connection', (socket) => {
-    // For now, accept all connections (session auth happens on first chat message)
-    // TODO: Properly extract userId from Fastify session cookie
 
     socket.on(WS_EVENTS.CHAT_SEND, async (payload: ChatSendPayload) => {
       const { projectId, content, attachments, modelId } = payload;
       log(`CHAT_SEND: projectId=${projectId}, content_len=${content.length}, modelId=${modelId}`);
 
-      // TODO: Extract userId from session cookie
-      // For now, skip ownership check
+      // Verify authentication
+      const userId = socket.data.userId;
+      if (!userId) {
+        log('ERROR: No authenticated userId');
+        socket.emit(WS_EVENTS.AGENT_ERROR, { error: 'Unauthorized' });
+        return;
+      }
+
+      // Verify project ownership
       const [project] = await db
         .select()
         .from(projects)
         .where(eq(projects.id, projectId))
         .limit(1);
-      if (!project) return;
-      const userId = project.userId;
+      if (!project || project.userId !== userId) {
+        log(`ERROR: User ${userId} does not own project ${projectId}`);
+        socket.emit(WS_EVENTS.AGENT_ERROR, { error: 'Unauthorized' });
+        return;
+      }
 
       // Load history, files, tasks, and memories BEFORE inserting the current user message,
       // so the current turn isn't duplicated in chatHistory + userMessage.

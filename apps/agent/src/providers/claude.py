@@ -97,4 +97,6 @@ async def run_claude(request: AgentRequest) -> AsyncGenerator[str, None]:
         "type": "done",
         "responseText": response_text,
         "fileChanges": [fc.model_dump() for fc in seen.values()],
+        "taskUpdates": [],
+        "memoryUpdates": {},
     }) + "\n"
