@@ -11,6 +11,8 @@ interface ProjectState {
   setActiveFile: (id: string | null) => void;
   updateFileContent: (id: string, content: string) => void;
   upsertFile: (file: ProjectFile) => void;
+  deleteFile: (id: string) => void;
+  renameFile: (id: string, newPath: string) => void;
 }
 
 export const useProjectStore = create<ProjectState>((set) => ({
@@ -45,5 +47,20 @@ export const useProjectStore = create<ProjectState>((set) => ({
           : [...s.files, file],
       };
     });
+  },
+  deleteFile: (id) => {
+    debug('store', `deleteFile: ${id}`);
+    set((s) => ({
+      files: s.files.filter((f) => f.id !== id),
+      activeFileId: s.activeFileId === id ? null : s.activeFileId,
+    }));
+  },
+  renameFile: (id, newPath) => {
+    debug('store', `renameFile: ${id} -> ${newPath}`);
+    set((s) => ({
+      files: s.files.map((f) =>
+        f.id === id ? { ...f, path: newPath } : f
+      ),
+    }));
   },
 }));

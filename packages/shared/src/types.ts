@@ -1,4 +1,4 @@
-export type ApiKeyProvider = 'claude' | 'openai' | 'gemini' | 'openrouter' | 'unified';
+export type ApiKeyProvider = string;
 
 export interface UserModel {
   id: string;
@@ -73,9 +73,57 @@ export interface AgentRequest {
   // Unified multi-provider fields — set model to use any supported provider
   model?: string;       // e.g. "claude-opus-4-6", "gpt-4o", "ollama/llama3.3"
   customBaseUrl?: string;
+  // Task/Memory/Skill systems
+  existingTasks?: Task[];
+  projectMemory?: Record<string, Memory>;
+  activeSkill?: string;
 }
 
 export interface AgentResponse {
   responseText: string;
   fileChanges: FileChange[];
+  taskUpdates?: Task[];
+  memoryUpdates?: Record<string, Memory>;
+}
+
+export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
+
+export interface Task {
+  id: string;
+  projectId: string;
+  subject: string;
+  description?: string;
+  status: TaskStatus;
+  activeForm?: string;
+  blocks: string[];
+  blockedBy: string[];
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type MemoryType = 'user' | 'feedback' | 'project' | 'reference';
+export type MemoryScope = 'user' | 'project';
+
+export interface Memory {
+  id: string;
+  userId: string;
+  projectId?: string;
+  name: string;
+  description?: string;
+  type: MemoryType;
+  content: string;
+  confidence: number;
+  scope: MemoryScope;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Skill {
+  name: string;
+  description: string;
+  triggers: string[];
+  prompt: string;
+  tools?: string[];
+  model?: string;
 }

@@ -112,6 +112,32 @@ export async function fileRoutes(app: FastifyInstance) {
     },
   );
 
+  app.patch(
+    '/api/v1/projects/:projectId/files/:fileId',
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const userId = req.session.userId!;
+      const { projectId, fileId } = req.params as { projectId: string; fileId: string };
+      if (!(await assertProjectOwnership(userId, projectId))) {
+        return reply.status(404).send({ error: 'Not found' });
+      }
+      const schema = z.object({
+        path: z.string().min(1),
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: parsed.error.flatten() });
+      }
+      const [file] = await db
+        .update(files)
+        .set({ path: parsed.data.path, updatedAt: new Date() })
+        .where(and(eq(files.id, fileId), eq(files.projectId, projectId)))
+        .returning();
+      if (!file) return reply.status(404).send({ error: 'Not found' });
+      return reply.send({ file });
+    },
+  );
+
   app.delete(
     '/api/v1/projects/:projectId/files/:fileId',
     { preHandler: requireAuth },

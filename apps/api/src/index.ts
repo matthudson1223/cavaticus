@@ -8,6 +8,8 @@ import { projectRoutes } from './routes/projects.js';
 import { fileRoutes } from './routes/files.js';
 import { settingsRoutes } from './routes/settings.js';
 import { modelRoutes } from './routes/models.js';
+import { taskRoutes } from './routes/tasks.js';
+import { memoryRoutes } from './routes/memories.js';
 import { createSocketServer } from './ws/handler.js';
 
 const debug = process.env['DEBUG'] === 'cavaticus';
@@ -35,6 +37,8 @@ await app.register(projectRoutes);
 await app.register(fileRoutes);
 await app.register(settingsRoutes);
 await app.register(modelRoutes);
+await app.register(taskRoutes);
+await app.register(memoryRoutes);
 
 app.get('/health', async () => ({ status: 'ok' }));
 

@@ -8,6 +8,7 @@ export const WS_EVENTS = {
   FILE_CHANGED: 'file:changed',
   AGENT_STATUS: 'agent:status',
   AGENT_ERROR: 'agent:error',
+  TASK_UPDATED: 'task:updated',
 } as const;
 
 export type WsEventName = (typeof WS_EVENTS)[keyof typeof WS_EVENTS];
@@ -40,4 +41,9 @@ export interface FileChangedPayload {
 
 export interface AgentStatusPayload {
   status: 'thinking' | 'coding' | 'idle';
+}
+
+export interface TaskUpdatedPayload {
+  projectId: string;
+  task: import('./types.js').Task;
 }

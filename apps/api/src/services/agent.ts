@@ -7,10 +7,31 @@ export interface AgentChunk {
   text: string;
 }
 
+export interface TaskUpdate {
+  id?: string;
+  subject: string;
+  description?: string;
+  status: string;
+  activeForm?: string;
+  blocks: string[];
+  blockedBy: string[];
+  metadata?: unknown;
+}
+
+export interface MemoryUpdate {
+  content?: string;
+  type?: string;
+  description?: string;
+  confidence?: number;
+  scope?: string;
+}
+
 export interface AgentDone {
   type: 'done';
   responseText: string;
   fileChanges: FileChange[];
+  taskUpdates?: TaskUpdate[];
+  memoryUpdates?: Record<string, MemoryUpdate | null>;
 }
 
 export interface AgentError {

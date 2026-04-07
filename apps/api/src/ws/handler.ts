@@ -6,10 +6,12 @@ import {
   files,
   projects,
   userSettings,
+  tasks,
+  memories,
 } from '../db/schema.js';
-import { eq, asc } from 'drizzle-orm';
+import { eq, asc, or, and } from 'drizzle-orm';
 import { getDecryptedApiKey } from '../routes/settings.js';
-import { runAgent } from '../services/agent.js';
+import { runAgent, type TaskUpdate, type MemoryUpdate } from '../services/agent.js';
 import { WS_EVENTS } from '@cavaticus/shared';
 import type {
   ChatSendPayload,
@@ -70,9 +72,9 @@ export function createSocketServer(httpServer: HttpServer): SocketIOServer {
       if (!project) return;
       const userId = project.userId;
 
-      // Load history and files BEFORE inserting the current user message,
+      // Load history, files, tasks, and memories BEFORE inserting the current user message,
       // so the current turn isn't duplicated in chatHistory + userMessage.
-      const [projectFiles, rawHistory] = await Promise.all([
+      const [projectFiles, rawHistory, rawTasks, projectMemories] = await Promise.all([
         db.select({ path: files.path, content: files.content })
           .from(files)
           .where(eq(files.projectId, projectId)),
@@ -81,18 +83,74 @@ export function createSocketServer(httpServer: HttpServer): SocketIOServer {
           .where(eq(chatMessages.projectId, projectId))
           .orderBy(asc(chatMessages.createdAt))
           .limit(50),
+        db.select()
+          .from(tasks)
+          .where(eq(tasks.projectId, projectId)),
+        // Load both user-scope and project-scope memories
+        db.select()
+          .from(memories)
+          .where(
+            and(
+              eq(memories.userId, userId),
+              or(
+                and(eq(memories.projectId, projectId), eq(memories.scope, 'project')),
+                eq(memories.scope, 'user'),
+              ),
+            ),
+          ),
       ]);
+
+      // Convert null descriptions to undefined and dates to ISO strings for AgentRequest
+      const projectTasks = rawTasks.map(t => ({
+        id: t.id,
+        projectId: t.projectId,
+        subject: t.subject,
+        description: t.description ?? undefined,
+        status: t.status as any, // Database stores as string, type system expects TaskStatus literal
+        activeForm: t.activeForm ?? undefined,
+        blocks: t.blocks,
+        blockedBy: t.blockedBy,
+        metadata: (t.metadata ?? {}) as Record<string, unknown> | undefined,
+        createdAt: t.createdAt.toISOString(),
+        updatedAt: t.updatedAt.toISOString(),
+      }));
 
       // Drop empty assistant messages left by failed/cancelled turns
       const history = rawHistory.filter((h) => h.content.trim() !== '');
 
-      // Persist user message
+      // Detect skill trigger from message (e.g., "/commit fix auth")
+      let activeSkill: string | undefined;
+      let userContent = content;
+      const skillMatch = content.trim().match(/^(\S+)\s*(.*)/);
+      if (skillMatch && skillMatch[1]?.startsWith('/')) {
+        const trigger = skillMatch[1];
+        // Common skills: /commit, /review, /refactor
+        if (['/commit', '/review', '/review-pr', '/refactor'].includes(trigger)) {
+          activeSkill = trigger;
+          userContent = skillMatch[2] || ''; // Strip skill trigger from content
+        }
+      }
+
+      // Build memory dict keyed by name
+      const memoryDict: Record<string, any> = {};
+      for (const mem of projectMemories) {
+        memoryDict[mem.name] = {
+          name: mem.name,
+          content: mem.content,
+          type: mem.type,
+          description: mem.description,
+          confidence: mem.confidence,
+          created_at: mem.createdAt?.getTime() / 1000,
+        };
+      }
+
+      // Persist user message (use original content including skill trigger for history)
       await db
         .insert(chatMessages)
         .values({
           projectId,
           role: 'user',
-          content,
+          content,  // Keep original content with skill trigger for history
           attachments: attachments ?? [],
         });
 
@@ -144,11 +202,15 @@ export function createSocketServer(httpServer: HttpServer): SocketIOServer {
           role: h.role as 'user' | 'assistant',
           content: h.content,
         })),
-        userMessage: content,
+        userMessage: userContent || content,  // Use stripped content (skill trigger removed)
         attachments,
         openrouterModel: provider === 'openrouter' ? modelId : undefined,
         // Unified provider: pass model string directly for any provider
         model: modelId || undefined,
+        // Task/Memory/Skill systems
+        existingTasks: projectTasks,
+        projectMemory: memoryDict,
+        activeSkill,
       };
 
       try {
@@ -173,7 +235,7 @@ export function createSocketServer(httpServer: HttpServer): SocketIOServer {
             break;
           } else if (event.type === 'done') {
             fullText = event.responseText;
-            log(`CHAT_DONE: response_len=${event.responseText.length}, changes=${event.fileChanges.length}`);
+            log(`CHAT_DONE: response_len=${event.responseText.length}, changes=${event.fileChanges.length}, tasks=${event.taskUpdates?.length || 0}, memories=${Object.keys(event.memoryUpdates || {}).length}`);
 
             // Persist final assistant message
             await db
@@ -210,6 +272,90 @@ export function createSocketServer(httpServer: HttpServer): SocketIOServer {
                 projectId,
                 file: updatedFile,
               });
+            }
+
+            // Apply task updates (insert new tasks, update existing ones)
+            const taskUpdates = event.taskUpdates || [];
+            for (const taskUpdate of taskUpdates) {
+              // If task has a temporary ID from the agent, generate a new UUID
+              const finalId = taskUpdate.id?.startsWith('task_') ? undefined : taskUpdate.id;
+
+              const [updatedTask] = await db
+                .insert(tasks)
+                .values({
+                  id: finalId,  // undefined = let DB generate UUID; real UUID = use it
+                  projectId,
+                  subject: taskUpdate.subject,
+                  description: taskUpdate.description ?? null,
+                  status: taskUpdate.status,
+                  activeForm: taskUpdate.activeForm ?? null,
+                  blocks: taskUpdate.blocks,
+                  blockedBy: taskUpdate.blockedBy,
+                  metadata: taskUpdate.metadata,
+                })
+                .onConflictDoUpdate({
+                  target: [tasks.id],
+                  set: {
+                    subject: taskUpdate.subject,
+                    description: taskUpdate.description ?? null,
+                    status: taskUpdate.status,
+                    activeForm: taskUpdate.activeForm ?? null,
+                    blocks: taskUpdate.blocks,
+                    blockedBy: taskUpdate.blockedBy,
+                    metadata: taskUpdate.metadata,
+                    updatedAt: new Date(),
+                  },
+                })
+                .returning();
+
+              socket.emit(WS_EVENTS.TASK_UPDATED, {
+                projectId,
+                task: updatedTask,
+              });
+            }
+
+            // Apply memory updates
+            const memoryUpdates = event.memoryUpdates || {};
+            for (const [name, memUpdate] of Object.entries(memoryUpdates)) {
+              if (memUpdate === null) {
+                // Deletion
+                await db
+                  .delete(memories)
+                  .where(
+                    and(
+                      eq(memories.userId, userId),
+                      eq(memories.name, name),
+                    ),
+                  );
+              } else if (memUpdate) {
+                // Upsert - memUpdate is MemoryUpdate, not undefined
+                const memoryPayload: any = {
+                  userId,
+                  name,
+                  content: memUpdate.content ?? '',
+                  type: memUpdate.type ?? 'project',
+                  description: memUpdate.description ?? '',
+                  confidence: memUpdate.confidence ?? 1.0,
+                  scope: memUpdate.scope ?? 'project',
+                };
+
+                if (memoryPayload.scope === 'project') {
+                  memoryPayload.projectId = projectId;
+                }
+
+                await db
+                  .insert(memories)
+                  .values(memoryPayload)
+                  .onConflictDoUpdate({
+                    target: [memories.userId, memories.name, memories.scope],
+                    set: {
+                      content: memUpdate.content ?? '',
+                      description: memUpdate.description ?? '',
+                      confidence: memUpdate.confidence ?? 1.0,
+                      updatedAt: new Date(),
+                    },
+                  });
+              }
             }
 
             // Fetch final message from DB

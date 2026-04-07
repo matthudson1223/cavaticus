@@ -22,9 +22,10 @@ import json
 import logging
 from typing import AsyncGenerator
 
-from ..models import AgentRequest
+from ..models import AgentRequest, Task, Memory
 from ..tools import ToolContext, dispatch_tool, registry
-from .shared import SYSTEM_PROMPT, build_file_tree, shell_tools_excluded
+from ..tools.skills import find_skill
+from .shared import SYSTEM_PROMPT, build_file_tree, shell_tools_excluded, format_memory_context
 from .clawspring_providers import (
     PROVIDERS,
     AssistantTurn,
@@ -66,9 +67,37 @@ async def run_unified(request: AgentRequest) -> AsyncGenerator[str, None]:
         return
 
     fs: dict[str, str] = {f.path: f.content for f in request.projectFiles}
-    ctx = ToolContext(fs=fs, original_fs=dict(fs), project_id=request.projectId)
+
+    # Seed tasks and memory from request
+    tasks = [t.model_dump() for t in (request.existingTasks or [])]
+    memory = {}
+    for name, mem in (request.projectMemory or {}).items():
+        if isinstance(mem, Memory):
+            mem_dict = mem.model_dump()
+        else:
+            mem_dict = mem
+        memory[name] = mem_dict
+
+    ctx = ToolContext(
+        fs=fs,
+        original_fs=dict(fs),
+        project_id=request.projectId,
+        tasks=tasks,
+        memory=memory,
+    )
 
     system = SYSTEM_PROMPT.format(file_tree=build_file_tree(fs))
+
+    # Inject memory context if present
+    if memory:
+        memory_context = format_memory_context(memory)
+        system = memory_context + "\n\n" + system
+
+    # Inject skill prompt if active
+    if request.activeSkill:
+        skill = find_skill(request.activeSkill)
+        if skill:
+            system = skill.prompt + "\n\n" + system
 
     # Unified provider always passes Anthropic-style tool schemas;
     # clawspring's stream() handles conversion to the right format internally.
@@ -177,8 +206,20 @@ async def run_unified(request: AgentRequest) -> AsyncGenerator[str, None]:
             })
 
     seen = {fc.path: fc for fc in ctx.file_changes}
+
+    # Prepare task and memory updates
+    task_updates = ctx.task_updates
+    memory_updates = {}
+    for name, mem in ctx.memory_updates.items():
+        if mem is None:
+            memory_updates[name] = None  # deletion marker
+        else:
+            memory_updates[name] = mem
+
     yield json.dumps({
         "type": "done",
         "responseText": response_text,
         "fileChanges": [fc.model_dump() for fc in seen.values()],
+        "taskUpdates": task_updates,
+        "memoryUpdates": memory_updates,
     }) + "\n"

@@ -42,3 +42,21 @@ Always explain what you changed and why."""
 
 def build_file_tree(fs: dict[str, str]) -> str:
     return "\n".join(f"  - {path}" for path in sorted(fs.keys()))
+
+
+def format_memory_context(memory: dict[str, dict]) -> str:
+    """Format memory entries as a context block to inject into the system prompt."""
+    if not memory:
+        return ""
+
+    lines = ["## Active Memory\n"]
+    lines.append("You have access to the following project memories and user preferences:\n")
+
+    for name, entry in sorted(memory.items()):
+        mem_type = entry.get("type", "project")
+        description = entry.get("description", "")
+        lines.append(f"- **{name}** ({mem_type}): {description if description else entry.get('content', '')[:50]}")
+
+    lines.append("\nUse the remember(), recall(), and search_memory() tools to update your understanding as you learn more.")
+
+    return "\n".join(lines)

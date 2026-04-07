@@ -6,6 +6,7 @@ import {
   integer,
   uniqueIndex,
   jsonb,
+  real,
 } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
@@ -91,4 +92,45 @@ export const userModels = pgTable(
     addedAt: timestamp('added_at').notNull().defaultNow(),
   },
   (t) => [uniqueIndex('user_models_user_model_idx').on(t.userId, t.modelId)],
+);
+
+export const tasks = pgTable(
+  'tasks',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    subject: text('subject').notNull(),
+    description: text('description'),
+    status: text('status').notNull().default('pending'), // pending | in_progress | completed | cancelled
+    activeForm: text('active_form'),
+    blocks: text('blocks').array().notNull().default([]),
+    blockedBy: text('blocked_by').array().notNull().default([]),
+    metadata: jsonb('metadata').notNull().default('{}'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+);
+
+export const memories = pgTable(
+  'memories',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    projectId: uuid('project_id').references(() => projects.id, { onDelete: 'cascade' }), // nullable = user scope
+    name: text('name').notNull(),
+    description: text('description'),
+    type: text('type').notNull(), // user | feedback | project | reference
+    content: text('content').notNull(),
+    confidence: real('confidence').notNull().default(1.0),
+    scope: text('scope').notNull().default('project'), // user | project
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('memories_user_name_scope_idx').on(t.userId, t.name, t.scope),
+  ],
 );

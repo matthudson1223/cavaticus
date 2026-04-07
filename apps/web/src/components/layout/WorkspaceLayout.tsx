@@ -2,10 +2,17 @@ import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { useState } from 'react';
 import { FileTree } from '../filetree/FileTree';
 import { CodeEditor } from '../editor/CodeEditor';
+import { GrapesEditor } from '../editor/GrapesEditor';
 import { PreviewFrame } from '../preview/PreviewFrame';
 import { ChatPanel } from '../chat/ChatPanel';
 
-type EditorTab = 'code' | 'preview';
+type EditorTab = 'code' | 'visual' | 'preview';
+
+const TAB_LABELS: Record<EditorTab, string> = {
+  code: 'Code',
+  visual: 'Visual',
+  preview: 'Preview',
+};
 
 export function WorkspaceLayout() {
   const [tab, setTab] = useState<EditorTab>('code');
@@ -23,14 +30,14 @@ export function WorkspaceLayout() {
           style={{ background: 'var(--border)' }}
         />
 
-        {/* Center: code/preview */}
+        {/* Center: code / visual / preview */}
         <Panel defaultSize={55} minSize={30}>
           <div className="h-full flex flex-col">
             <div
               className="flex items-center gap-1 px-3 py-1"
               style={{ borderBottom: '1px solid var(--border)' }}
             >
-              {(['code', 'preview'] as const).map((t) => (
+              {(['code', 'visual', 'preview'] as EditorTab[]).map((t) => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
@@ -40,12 +47,18 @@ export function WorkspaceLayout() {
                     color: tab === t ? 'var(--text)' : 'var(--text-muted)',
                   }}
                 >
-                  {t === 'code' ? 'Code' : 'Preview'}
+                  {TAB_LABELS[t]}
                 </button>
               ))}
             </div>
-            <div className="flex-1 overflow-hidden">
-              {tab === 'code' ? <CodeEditor /> : <PreviewFrame />}
+
+            <div className="flex-1 overflow-hidden relative">
+              {/* Code and Preview unmount when not active */}
+              {tab === 'code' && <CodeEditor />}
+              {tab === 'preview' && <PreviewFrame />}
+
+              {/* GrapesEditor stays mounted once initialized to preserve editor state */}
+              <GrapesEditor visible={tab === 'visual'} />
             </div>
           </div>
         </Panel>
