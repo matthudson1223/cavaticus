@@ -58,23 +58,37 @@ export function createSocketServer(httpServer: HttpServer, app: FastifyInstance)
   // Middleware to extract userId from session cookie
   io.use(async (socket, next) => {
     try {
-      const cookies = socket.request.headers.cookie || '';
-      const sessionMatch = cookies.match(/sessionId=([^;]+)/);
-      const sessionId = sessionMatch?.[1];
+      const cookies = socket.handshake.headers.cookie || '';
+      const sessionIdMatch = cookies.match(/sessionId=([^;]+)/);
+      const sessionId = sessionIdMatch?.[1];
 
       if (!sessionId) {
         return next(new Error('No session found'));
       }
 
-      // Decode the session from Fastify's session store
-      const session = await app.request.unsignCookie?.(sessionId);
-      if (!session?.value?.userId) {
+      // Access the session from Fastify's session store
+      // The sessionStore is attached to the Fastify instance
+      const sessionStore = (app as any).sessionStore;
+      if (!sessionStore) {
+        return next(new Error('Session store not available'));
+      }
+
+      // Look up the session by ID in the store
+      const session = await new Promise<any>((resolve, reject) => {
+        sessionStore.get(sessionId, (err: any, session: any) => {
+          if (err) reject(err);
+          else resolve(session);
+        });
+      });
+
+      if (!session?.userId) {
         return next(new Error('Invalid or expired session'));
       }
 
-      socket.data.userId = session.value.userId;
+      socket.data.userId = session.userId;
       next();
     } catch (err) {
+      log(`Session auth error: ${err instanceof Error ? err.message : String(err)}`);
       next(new Error('Session validation failed'));
     }
   });
