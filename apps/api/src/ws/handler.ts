@@ -59,32 +59,51 @@ export function createSocketServer(httpServer: HttpServer, app: FastifyInstance)
   io.use(async (socket, next) => {
     try {
       const cookies = socket.handshake.headers.cookie || '';
+      // @fastify/session uses 'sessionId' as default cookie name
       const sessionIdMatch = cookies.match(/sessionId=([^;]+)/);
       const sessionId = sessionIdMatch?.[1];
 
       if (!sessionId) {
+        log(`No sessionId found in cookies: ${cookies.substring(0, 50)}`);
         return next(new Error('No session found'));
       }
 
-      // Access the session from Fastify's session store
-      // The sessionStore is attached to the Fastify instance
-      const sessionStore = (app as any).sessionStore;
+      // Access the session store from Fastify's plugin store
+      let sessionStore = (app as any).sessionStore;
+
+      // Fallback: try to access via other possible property names used by @fastify/session
       if (!sessionStore) {
+        sessionStore = (app as any).session?.store;
+      }
+      if (!sessionStore) {
+        sessionStore = (app as any).store;
+      }
+
+      if (!sessionStore) {
+        log(`Session store not available. App keys: ${Object.keys(app).join(',').substring(0, 100)}`);
+        log(`App decorators: ${Object.keys((app as any).decorators || {}).join(',')}`);
         return next(new Error('Session store not available'));
       }
 
       // Look up the session by ID in the store
       const session = await new Promise<any>((resolve, reject) => {
         sessionStore.get(sessionId, (err: any, session: any) => {
-          if (err) reject(err);
-          else resolve(session);
+          if (err) {
+            log(`Session store error: ${err instanceof Error ? err.message : String(err)}`);
+            reject(err);
+          } else {
+            log(`Session lookup for ${sessionId}: ${session ? 'found' : 'not found'}`);
+            resolve(session);
+          }
         });
       });
 
       if (!session?.userId) {
+        log(`Invalid session: no userId. Session keys: ${session ? Object.keys(session).join(',') : 'null'}`);
         return next(new Error('Invalid or expired session'));
       }
 
+      log(`Socket authenticated: userId=${session.userId}`);
       socket.data.userId = session.userId;
       next();
     } catch (err) {

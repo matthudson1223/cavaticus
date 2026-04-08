@@ -19,10 +19,46 @@ import { templateRoutes } from './routes/templates.js';
 import { blockRoutes } from './routes/blocks.js';
 import { createSocketServer } from './ws/handler.js';
 
+// Simple in-memory session store for development
+class MemoryStore {
+  private sessions = new Map<string, any>();
+
+  get(sessionId: string, callback: (err: Error | null, session?: any) => void) {
+    try {
+      const session = this.sessions.get(sessionId);
+      callback(null, session);
+    } catch (err) {
+      callback(err instanceof Error ? err : new Error(String(err)));
+    }
+  }
+
+  set(sessionId: string, session: any, callback: (err?: Error | null) => void) {
+    try {
+      this.sessions.set(sessionId, session);
+      callback(null);
+    } catch (err) {
+      callback(err instanceof Error ? err : new Error(String(err)));
+    }
+  }
+
+  destroy(sessionId: string, callback: (err?: Error | null) => void) {
+    try {
+      this.sessions.delete(sessionId);
+      callback(null);
+    } catch (err) {
+      callback(err instanceof Error ? err : new Error(String(err)));
+    }
+  }
+}
+
 const debug = process.env['DEBUG'] === 'cavaticus';
 const app = Fastify({
   logger: debug ? { level: 'debug' } : true
 });
+
+// Create and attach session store
+const sessionStore = new MemoryStore();
+(app as any).sessionStore = sessionStore;
 
 await app.register(helmet, {
   contentSecurityPolicy: {
@@ -50,6 +86,7 @@ await app.register(session, {
     httpOnly: true,
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
   },
+  store: sessionStore,
 });
 
 await app.register(csrf);
