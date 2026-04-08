@@ -108,12 +108,58 @@ pnpm turbo build
 
 ## Deployment (Railway)
 
-1. Push this repo to GitHub.
-2. Create a new Railway project and link the repo.
-3. Railway will detect the `railway.toml` and provision three services: `web`, `api`, and `agent`.
-4. Add a PostgreSQL and Redis plugin to the project — Railway injects `DATABASE_URL` and `REDIS_URL` automatically.
-5. Set the remaining environment variables (`SESSION_SECRET`, `ENCRYPTION_KEY`, `AGENT_SERVICE_URL`, `VITE_API_URL`) in the Railway dashboard.
-6. Deploy.
+For a complete guide on deploying to Railway, see **[RAILWAY_DEPLOYMENT.md](./RAILWAY_DEPLOYMENT.md)**.
+
+### Quick Start
+
+1. **Generate secrets**:
+   ```bash
+   ./scripts/railway-setup.sh
+   ```
+   This generates and displays `SESSION_SECRET`, `ENCRYPTION_KEY`, and `POSTGRES_PASSWORD`.
+
+2. **Create Railway project**:
+   - Go to [railway.app](https://railway.app) and create a new project
+   - Link your GitHub repository
+   - Railway will detect `railway.toml` and auto-configure services
+
+3. **Add services**:
+   - PostgreSQL database (Railway will auto-provision)
+   - Web, API, and Agent services (auto-detected from `railway.toml`)
+
+4. **Set environment variables** in Railway dashboard:
+   - **API service**: `SESSION_SECRET`, `ENCRYPTION_KEY`, `DATABASE_URL` (auto-linked)
+   - **Web service**: `VITE_API_URL` (auto-set in railway.toml)
+   - **Postgres service**: `POSTGRES_PASSWORD`, `POSTGRES_USER`, `POSTGRES_DB`
+
+5. **Deploy**:
+   ```bash
+   git add .
+   git commit -m "Railway deployment"
+   git push origin main
+   ```
+
+6. **Run database migrations** after first deploy:
+   ```bash
+   railway run --service api -- npm run db:push
+   ```
+
+### Architecture
+
+The platform deploys as 4 interconnected services on Railway:
+
+```
+Web (React/Vite) ←→ API (Fastify) ←→ Agent (FastAPI)
+                        ↓
+                    PostgreSQL
+```
+
+- **Web**: Serves frontend at `your-project.railway.app`
+- **API**: Handles auth, projects, chat, file ops (port 8080)
+- **Agent**: Python sidecar for LLM interactions (port 8000)
+- **Postgres**: Persistent database for users, projects, chat history
+
+Services communicate via Railway's internal network (`*.railway.internal` DNS).
 
 ## How the agent loop works
 

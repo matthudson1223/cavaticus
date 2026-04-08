@@ -1,11 +1,38 @@
+# Frontend Service (React Vite App)
 [service.web]
 buildCommand = "pnpm install && pnpm --filter @cavaticus/shared build && pnpm --filter @cavaticus/web build"
 startCommand = "pnpm --filter @cavaticus/web preview --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/"
+healthcheckTimeout = 30
+variables = { VITE_API_URL = "http://api.railway.internal:8080" }
 
+# Backend API Service (Fastify)
 [service.api]
 buildCommand = "pnpm install && pnpm --filter @cavaticus/shared build && pnpm --filter @cavaticus/api build"
 startCommand = "node apps/api/dist/index.js"
+healthcheckPath = "/health"
+healthcheckTimeout = 10
+variables = {
+  AGENT_SERVICE_URL = "http://agent.railway.internal:8000",
+  NODE_ENV = "production"
+}
 
+# Python Agent Sidecar (FastAPI)
 [service.agent]
 rootDirectory = "apps/agent"
 builder = "dockerfile"
+healthcheckPath = "/docs"
+healthcheckTimeout = 10
+
+# PostgreSQL Database
+[service.postgres]
+image = "postgres:15"
+variables = {
+  POSTGRES_PASSWORD = "${{ secrets.POSTGRES_PASSWORD }}",
+  POSTGRES_USER = "cavaticus",
+  POSTGRES_DB = "cavaticus"
+}
+crons = []
+
+[postgres.volumes]
+data = "/var/lib/postgresql/data"
