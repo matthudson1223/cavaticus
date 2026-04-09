@@ -9,7 +9,6 @@ import { ChatPanel } from '../chat/ChatPanel';
 import { AppHeader } from './AppHeader';
 import { KeyboardShortcutsHelp } from '../KeyboardShortcutsHelp';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
-import { useSocket } from '../../hooks/useSocket';
 
 type EditorTab = 'code' | 'visual' | 'preview';
 
@@ -53,9 +52,6 @@ export function WorkspaceLayout() {
   const [showChat, setShowChat] = useState(true);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const project = useProjectStore((s) => s.project);
-
-  // Initialize WebSocket connection for this project
-  useSocket(project?.id);
 
   const handleExport = useCallback(async () => {
     if (!project) return;
