@@ -55,6 +55,15 @@ export function useSocket(projectId: string) {
       console.error('Agent error:', payload.error);
       setAgentStatus('idle');
       setCurrentMessageId(null);
+      // Replace the dangling placeholder with a visible error message
+      replaceMessage({
+        id: `error-${Date.now()}`,
+        projectId,
+        role: 'assistant',
+        content: `**Error:** ${payload.error}`,
+        attachments: [],
+        createdAt: new Date().toISOString(),
+      });
     }
 
     socket.on(WS_EVENTS.CHAT_CHUNK, onChunk);
