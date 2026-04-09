@@ -22,7 +22,7 @@ import type {
 } from '@cavaticus/shared';
 
 /** Detect which provider a model string belongs to (mirrors Python detect_provider). */
-function detectProviderFromModel(modelId: string): string | null {
+export function detectProviderFromModel(modelId: string): string | null {
   if (modelId.startsWith('claude-')) return 'claude';
   if (modelId.startsWith('gpt-') || /^o[13]/.test(modelId)) return 'openai';
   if (modelId.startsWith('gemini-')) return 'gemini';
@@ -486,7 +486,7 @@ export function createSocketServer(httpServer: HttpServer, app: FastifyInstance)
   return io;
 }
 
-function guessMimeType(path: string): string {
+export function guessMimeType(path: string): string {
   if (path.endsWith('.html')) return 'text/html';
   if (path.endsWith('.css')) return 'text/css';
   if (path.endsWith('.js') || path.endsWith('.mjs')) return 'application/javascript';
