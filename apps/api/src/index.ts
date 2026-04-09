@@ -84,6 +84,7 @@ await app.register(session, {
   cookie: {
     secure: process.env['NODE_ENV'] === 'production',
     httpOnly: true,
+    sameSite: process.env['NODE_ENV'] === 'production' ? 'strict' : false,
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
   },
   store: sessionStore,

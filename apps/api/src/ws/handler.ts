@@ -294,6 +294,13 @@ export function createSocketServer(httpServer: HttpServer, app: FastifyInstance)
             fullText += event.text;
             log(`CHAT_CHUNK: ${event.text.length} chars`);
             socket.emit(WS_EVENTS.CHAT_CHUNK, { messageId, chunk: event.text });
+          } else if (event.type === 'tool_use') {
+            log(`TOOL_USE: ${event.name}`);
+            socket.emit(WS_EVENTS.AGENT_TOOL_USE, { messageId, toolName: event.name });
+            socket.emit(WS_EVENTS.AGENT_STATUS, { status: 'coding' });
+          } else if (event.type === 'thinking') {
+            log(`THINKING: ${event.text.length} chars`);
+            socket.emit(WS_EVENTS.AGENT_THINKING, { messageId, text: event.text });
           } else if (event.type === 'error') {
             log(`AGENT_ERROR: ${event.text}`);
             socket.emit(WS_EVENTS.AGENT_ERROR, { error: event.text });
@@ -434,6 +441,7 @@ export function createSocketServer(httpServer: HttpServer, app: FastifyInstance)
             socket.emit(WS_EVENTS.CHAT_DONE, {
               messageId,
               message: finalMsg,
+              fileChanges: event.fileChanges,
             });
             log('Agent completed successfully');
             socket.emit(WS_EVENTS.AGENT_STATUS, { status: 'idle' });

@@ -7,6 +7,8 @@ import type {
   ChatDonePayload,
   FileChangedPayload,
   AgentStatusPayload,
+  AgentToolUsePayload,
+  AgentThinkingPayload,
 } from '@cavaticus/shared';
 import { useChatStore } from '../stores/chatStore';
 import { useProjectStore } from '../stores/projectStore';
@@ -18,6 +20,9 @@ export function useSocket(projectId: string) {
   const setAgentStatus = useChatStore((s) => s.setAgentStatus);
   const addMessage = useChatStore((s) => s.addMessage);
   const setCurrentMessageId = useChatStore((s) => s.setCurrentMessageId);
+  const addToolStep = useChatStore((s) => s.addToolStep);
+  const setThinking = useChatStore((s) => s.setThinking);
+  const completeActivity = useChatStore((s) => s.completeActivity);
   const upsertFile = useProjectStore((s) => s.upsertFile);
   const addDebugMessage = useDebugStore((s) => s.addMessage);
 
@@ -38,6 +43,7 @@ export function useSocket(projectId: string) {
     function onDone(payload: ChatDonePayload) {
       debug('ws', `CHAT_DONE: message received`, payload.message);
       replaceMessage(payload.message);
+      completeActivity(payload.messageId, payload.fileChanges ?? []);
       setCurrentMessageId(null);
     }
     function onFileChanged(payload: FileChangedPayload) {
@@ -50,6 +56,14 @@ export function useSocket(projectId: string) {
       debug('ws', `AGENT_STATUS: ${payload.status}`);
       setAgentStatus(payload.status);
     }
+    function onToolUse(payload: AgentToolUsePayload) {
+      debug('ws', `AGENT_TOOL_USE: ${payload.toolName}`, { messageId: payload.messageId });
+      addToolStep(payload.messageId, payload.toolName);
+    }
+    function onThinking(payload: AgentThinkingPayload) {
+      debug('ws', `AGENT_THINKING: ${payload.text.length} chars`);
+      setThinking(payload.messageId, payload.text);
+    }
     function onError(payload: { error: string }) {
       debug('ws', `AGENT_ERROR: ${payload.error}`);
       console.error('Agent error:', payload.error);
@@ -61,6 +75,8 @@ export function useSocket(projectId: string) {
     socket.on(WS_EVENTS.CHAT_DONE, onDone);
     socket.on(WS_EVENTS.FILE_CHANGED, onFileChanged);
     socket.on(WS_EVENTS.AGENT_STATUS, onStatus);
+    socket.on(WS_EVENTS.AGENT_TOOL_USE, onToolUse);
+    socket.on(WS_EVENTS.AGENT_THINKING, onThinking);
     socket.on(WS_EVENTS.AGENT_ERROR, onError);
 
     return () => {
@@ -69,9 +85,11 @@ export function useSocket(projectId: string) {
       socket.off(WS_EVENTS.CHAT_DONE, onDone);
       socket.off(WS_EVENTS.FILE_CHANGED, onFileChanged);
       socket.off(WS_EVENTS.AGENT_STATUS, onStatus);
+      socket.off(WS_EVENTS.AGENT_TOOL_USE, onToolUse);
+      socket.off(WS_EVENTS.AGENT_THINKING, onThinking);
       socket.off(WS_EVENTS.AGENT_ERROR, onError);
     };
-  }, [projectId, appendChunk, replaceMessage, setAgentStatus, addMessage, setCurrentMessageId, upsertFile, addDebugMessage]);
+  }, [projectId]);
 
   return getSocket();
 }

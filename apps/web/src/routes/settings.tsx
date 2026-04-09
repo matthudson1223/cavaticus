@@ -1,8 +1,8 @@
-import { Link } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect } from 'react';
 import { api } from '../lib/api';
 import { isDebugEnabled } from '../lib/debug';
+import { AppHeader } from '../components/layout/AppHeader';
 import type { ApiKeyProvider, UserSettings, UserModel } from '@cavaticus/shared';
 
 const PROVIDERS: { id: string; label: string; placeholder: string }[] = [
@@ -93,17 +93,8 @@ export function settingsComponent() {
   const settings = data?.settings;
 
   return (
-    <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
-      <header
-        className="flex items-center justify-between px-6 py-4"
-        style={{ borderBottom: '1px solid var(--border)' }}
-      >
-        <Link to="/" className="text-sm" style={{ color: 'var(--text-muted)' }}>
-          ← Back
-        </Link>
-        <h1 className="text-lg font-bold" style={{ color: 'var(--text)' }}>Settings</h1>
-        <div />
-      </header>
+    <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg)' }}>
+      <AppHeader breadcrumbs={[{ label: 'Settings' }]} />
 
       <main className="max-w-2xl mx-auto px-6 py-8 space-y-8">
         <section>

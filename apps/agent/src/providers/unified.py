@@ -49,13 +49,18 @@ def _collect_turn(gen) -> tuple[list[str], list[str], AssistantTurn | None]:
     thinking_chunks: list[str] = []
     turn: AssistantTurn | None = None
 
-    for event in gen:
-        if isinstance(event, TextChunk):
-            text_chunks.append(event.text)
-        elif isinstance(event, ThinkingChunk):
-            thinking_chunks.append(event.text)
-        elif isinstance(event, AssistantTurn):
-            turn = event
+    try:
+        for event in gen:
+            if isinstance(event, TextChunk):
+                text_chunks.append(event.text)
+            elif isinstance(event, ThinkingChunk):
+                thinking_chunks.append(event.text)
+            elif isinstance(event, AssistantTurn):
+                turn = event
+    except Exception as e:
+        logger.error(f"_collect_turn error: {e}")
+        text_chunks.append(f"\n\nError during generation: {e}")
+        turn = AssistantTurn("".join(text_chunks), [], 0, 0)
 
     return text_chunks, thinking_chunks, turn
 

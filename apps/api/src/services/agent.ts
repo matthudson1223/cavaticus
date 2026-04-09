@@ -7,6 +7,16 @@ export interface AgentChunk {
   text: string;
 }
 
+export interface AgentToolUse {
+  type: 'tool_use';
+  name: string;
+}
+
+export interface AgentThinking {
+  type: 'thinking';
+  text: string;
+}
+
 export interface TaskUpdate {
   id?: string;
   subject: string;
@@ -39,7 +49,7 @@ export interface AgentError {
   text: string;
 }
 
-export type AgentEvent = AgentChunk | AgentDone | AgentError;
+export type AgentEvent = AgentChunk | AgentToolUse | AgentThinking | AgentDone | AgentError;
 
 export async function* runAgent(
   request: AgentRequest,
