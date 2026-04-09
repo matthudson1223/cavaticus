@@ -21,8 +21,11 @@ Model string formats:
 """
 from __future__ import annotations
 import json
+import logging
 import urllib.request
 from typing import Generator
+
+logger = logging.getLogger(__name__)
 
 # ── Provider registry ──────────────────────────────────────────────────────
 
@@ -422,8 +425,13 @@ def stream_openai_compat(
     config: dict,
 ) -> Generator:
     """Stream from any OpenAI-compatible API. Yields TextChunk, then AssistantTurn."""
-    from openai import OpenAI
-    client = OpenAI(api_key=api_key or "dummy", base_url=base_url)
+    from openai import OpenAI, APIStatusError, APIConnectionError, APITimeoutError
+    import httpx
+    client = OpenAI(
+        api_key=api_key or "dummy",
+        base_url=base_url,
+        timeout=httpx.Timeout(120.0, connect=15.0),
+    )
 
     oai_messages = [{"role": "system", "content": system}] + messages_to_openai(messages)
 
@@ -455,7 +463,33 @@ def stream_openai_compat(
     tool_buf: dict = {}   # index → {id, name, args_str}
     in_tok = out_tok = 0
 
-    stream = client.chat.completions.create(**kwargs)
+    try:
+        stream = client.chat.completions.create(**kwargs)
+    except APIStatusError as e:
+        error_msg = f"API error {e.status_code}"
+        try:
+            body = e.response.json()
+            detail = body.get("error", {}).get("message", "") or json.dumps(body)
+            error_msg = f"{error_msg}: {detail}"
+        except Exception:
+            pass
+        logger.error(f"stream_openai_compat: {error_msg}")
+        yield TextChunk(f"Error: {error_msg}")
+        yield AssistantTurn(f"Error: {error_msg}", [], 0, 0)
+        return
+    except (APIConnectionError, APITimeoutError) as e:
+        error_msg = f"Connection error: {e}"
+        logger.error(f"stream_openai_compat: {error_msg}")
+        yield TextChunk(f"Error: {error_msg}")
+        yield AssistantTurn(f"Error: {error_msg}", [], 0, 0)
+        return
+    except Exception as e:
+        error_msg = f"Unexpected error: {e}"
+        logger.error(f"stream_openai_compat: {error_msg}")
+        yield TextChunk(f"Error: {error_msg}")
+        yield AssistantTurn(f"Error: {error_msg}", [], 0, 0)
+        return
+
     for chunk in stream:
         if not chunk.choices:
             # usage-only chunk (some providers send this last)
